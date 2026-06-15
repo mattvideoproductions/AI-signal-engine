@@ -15,6 +15,50 @@ interface EnvStatus {
 const INGEST_TOKEN_STORAGE_KEY = 'ai-signal-engine.ingest-token';
 const PROMPT_MODE_STORAGE_KEY = 'ai-signal-engine.prompt-mode';
 
+/**
+ * Copy text to the clipboard, working in BOTH secure (https/localhost) and
+ * plain-http contexts. `navigator.clipboard` is undefined over http://VPS_IP,
+ * which is exactly how this app is accessed on a VPS, so we fall back to a
+ * hidden <textarea> + execCommand('copy'). Returns true on success.
+ */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Selects the visible prompt text so the user can press Ctrl+C / Cmd+C manually. */
+function selectPromptText(): void {
+  const el = document.getElementById('hermes-prompt');
+  if (!el) return;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function StatusPill({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; badLabel: string }) {
   return (
     <span
@@ -168,10 +212,18 @@ export default function SettingsPage() {
       return;
     }
 
-    await navigator.clipboard.writeText(prompt);
-    setCopied(true);
-    setTokenMsg('Token verified. Prompt copied for Hermes.');
-    window.setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(prompt);
+    if (ok) {
+      setCopied(true);
+      setTokenMsg('Token verified. Prompt copied for Hermes.');
+      window.setTimeout(() => setCopied(false), 2000);
+    } else {
+      setTokenMsg(
+        'Token verified, but the browser blocked clipboard access (this happens over plain http://). ' +
+          'The prompt is selected below — press Ctrl+C (or Cmd+C) to copy it.',
+      );
+      selectPromptText();
+    }
   }
 
   const inputCls =
@@ -317,7 +369,7 @@ Content-Type: application/json`}
             {tokenMsg}
           </p>
         )}
-        <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-700/50 bg-slate-950/70 p-3 font-mono text-[11px] leading-relaxed text-slate-300">
+        <pre id="hermes-prompt" className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-700/50 bg-slate-950/70 p-3 font-mono text-[11px] leading-relaxed text-slate-300">
           {prompt}
         </pre>
       </Section>
