@@ -1,0 +1,12 @@
+{
+  "comment": "Real AI-news sources the agent scans. Add/remove freely. Prefer RSS/Atom feeds, official blogs, and arXiv. Some sites rate-limit bots — the agent skips any feed that errors.",
+  "feeds": [
+    { "name": "arXiv cs.AI", "url": "http://export.arxiv.org/rss/cs.AI" },
+    { "name": "arXiv cs.LG", "url": "http://export.arxiv.org/rss/cs.LG" },
+    { "name": "Hugging Face Blog", "url": "https://huggingface.co/blog/feed.xml" },
+    { "name": "The Verge AI", "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml" },
+    { "name": "VentureBeat AI", "url": "https://venturebeat.com/category/ai/feed/" },
+    { "name": "TechCrunch AI", "url": "https://techcrunch.com/category/artificial-intelligence/feed/" },
+    { "name": "MIT Tech Review AI", "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed" }
+  ]
+}

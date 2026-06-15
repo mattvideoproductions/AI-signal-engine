@@ -1,0 +1,13 @@
+services:
+  signal-engine:
+    build: .
+    container_name: ai-signal-engine
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      # JSON data file inside the container, persisted via the volume below.
+      - DATA_FILE=./data/signal.json
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
