@@ -1,130 +1,168 @@
 # Deployment Guide — AI Signal Engine
 
-This guide takes you from a bare Hostinger VPS to a private dashboard with Hermes feeding it events.
+Plain-English walkthrough to get the dashboard live on a Hostinger VPS and have Hermes feed it.
+**You do not need a domain name.** You do not need to install Node. You access everything by your
+server's IP address.
 
-> **The #1 gotcha:** the VPS starts empty. Commands like `./launch-browser.sh`, `cp .env.example .env`,
-> or `docker build .` only work **after** you have pulled the repo onto the VPS and `cd`'d into it.
-> If you see *"No such file or directory"* or *"command not found"*, you are not inside the project
-> folder yet — do Step 1 first.
+## The mental model (read this first — it makes everything click)
 
----
+Three things live on your one VPS:
 
-## TL;DR — paste this into the VPS terminal
+1. **The dashboard** (this project) — the map you screen-record. You'll run it with Docker.
+2. **Hermes** — the AI agent that does the research. On Hostinger it's already running as a Docker
+   container (`hermes-agent-eblr` in your Docker Manager).
+3. **You** — the human who connects the two by handing Hermes a token and a URL.
 
-You only need **Docker** (already installed on the Hostinger VPS — that's what runs Docker Manager).
-You do **not** need `node` or `npm` on the host; the Dockerfile builds everything inside a container.
+They all sit on the same machine. The only "wiring" between them is: Hermes sends its findings to the
+dashboard's web address with a secret token. That's it.
 
-```bash
-# 0. install git if it's missing (Ubuntu)
-apt-get update && apt-get install -y git
+## What you need
 
-# 1. get the code (creates /opt/AI-signal-engine)
-cd /opt
-git clone https://github.com/mattvideoproductions/AI-signal-engine.git
-cd AI-signal-engine
-
-# 2. create your env file and set the two secrets
-cp .env.example .env
-nano .env          # set APP_PASSWORD and INGEST_TOKEN, then Ctrl+O, Enter, Ctrl+X
-
-# 3. build + run (first build ~2-3 min)
-docker compose up -d --build
-
-# 4. confirm it's alive on the VPS
-docker compose ps
-curl -I http://localhost:3000          # expect HTTP 307 (redirect to /login), or 200 in open mode
-```
-
-That's the whole deploy. Everything below is detail, the domain/HTTPS step, and wiring up Hermes.
+- A Hostinger VPS (you have one). **Docker is already installed** — it's what powers Docker Manager.
+- Your server's IP address. Get it any time by running `hostname -I` and taking the first value, or
+  read it off hPanel → VPS → Overview. **Everywhere below that says `YOUR_VPS_IP`, paste that number.**
+- That's it. No domain, no Node, no extra accounts.
 
 ---
 
-## Step 1 — get the code onto the VPS
+## Step 1 — Put the code on the server
 
-SSH in (you're already here if you're reading the VPS terminal), then clone:
+**Why:** the VPS starts empty. Nothing in this guide works until the project files are actually on it.
+(If a command ever says *"No such file"* or *"command not found"*, it's because you're not inside the
+project folder yet.)
 
 ```bash
-cd /opt
+apt-get update && apt-get install -y git     # installs git if it's missing
+cd /opt                                       # a normal place to keep server apps
 git clone https://github.com/mattvideoproductions/AI-signal-engine.git
-cd AI-signal-engine
+cd AI-signal-engine                           # <-- you must be in here for every later command
 ```
 
-- **No `git`?** `apt-get update && apt-get install -y git` first.
-- **Repo is private?** Either make it public, or clone with a GitHub token:
-  `git clone https://<TOKEN>@github.com/mattvideoproductions/AI-signal-engine.git`
-- **No git at all?** Grab a tarball instead (needs only curl + tar):
-  ```bash
-  cd /opt
-  curl -L https://github.com/mattvideoproductions/AI-signal-engine/archive/refs/heads/main.tar.gz | tar xz
-  cd AI-signal-engine-main
-  ```
+Run `pwd` to confirm — it should end in `/AI-signal-engine`.
 
-Every later command assumes you are **inside this folder**. Run `pwd` to check — it should end in
-`/AI-signal-engine`.
+## Step 2 — Set your two secrets
 
-## Step 2 — configure secrets
+**Why:** the dashboard needs a login password, and Hermes needs a shared token to prove it's allowed
+to send data. These live in a file called `.env`.
 
 ```bash
-cp .env.example .env
-nano .env
+cp .env.example .env     # makes your own copy of the template
+nano .env                # opens a basic text editor
 ```
 
-Set at least these two (generate strong values with `openssl rand -hex 32`):
+Set these two lines (leave everything else as-is):
 
 ```bash
-APP_PASSWORD=your-long-random-password    # leave BLANK for open mode (no login) — fine for a quick demo
-INGEST_TOKEN=your-long-random-token       # the bearer token Hermes must send
+APP_PASSWORD=pick-something-only-you-know     # the dashboard login. Blank = no login at all.
+INGEST_TOKEN=pick-a-long-random-string        # the secret Hermes will send. Treat it like a password.
 ```
 
-Save in nano: `Ctrl+O`, `Enter`, `Ctrl+X`.
+Save and close nano: **`Ctrl+O`**, then **`Enter`**, then **`Ctrl+X`**.
 
-## Step 3 — build and run with Docker
+> The optional `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / etc. lines at the bottom do **nothing** for
+> the dashboard — leave them blank. The AI model key belongs to *Hermes*, configured separately in the
+> Hermes container, not here.
+
+## Step 3 — Start the dashboard
+
+**Why:** this builds the app and runs it in the background. Docker handles everything inside a
+container, so you don't install Node or anything else on the server.
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build     # first build takes ~2-3 minutes; later restarts are instant
 ```
 
-This builds the image and starts the container in the background, publishing port **3000** on the
-host and persisting data to `./data` (a mounted volume, so it survives restarts).
-
-Check it:
+Check it's alive (still on the VPS):
 
 ```bash
-docker compose ps                 # container should be "running"
-docker compose logs -f            # watch startup logs (Ctrl+C to stop watching)
-curl -I http://localhost:3000     # 307 = up (password gate) · 200 = up (open mode)
+docker compose ps                  # should show the container as "running"
+curl -I http://localhost:3000      # "HTTP/1.1 307" (or 200) means it's working
 ```
 
-> Prefer the Docker Manager UI? Our `docker-compose.yml` uses `build: .`, so it needs the source
-> present — the SSH `git clone` + `docker compose up` path above is the one that works. The Compose
-> button in Docker Manager is for image-based stacks, not local-build ones.
+## Step 4 — Open the map in your browser
 
-## Step 4 — see the map in your browser
+**Why:** the dashboard is now serving on port 3000. You view it from your own computer using the
+server's IP.
 
-Pick one:
+1. Allow port 3000 through the firewall: hPanel → VPS → **Security → Firewall**, add a rule allowing
+   **TCP 3000**. (You've done this.)
+2. In your normal browser, go to:
+   ```
+   http://YOUR_VPS_IP:3000
+   ```
+   (e.g. if `hostname -I` shows `2.25.208.117`, you visit `http://2.25.208.117:3000`.)
+3. Log in with the `APP_PASSWORD` you set. You'll see the empty map. Click **▶ Demo Scan** to confirm
+   it animates — that proves the dashboard works before Hermes is even involved.
 
-**A. Quick demo (HTTP, by IP).** Open port 3000 in the Hostinger firewall
-(hPanel → VPS → Security → Firewall, allow TCP 3000), then visit:
+## Step 5 — Point Hermes at the dashboard
+
+**Why:** now you connect the agent to the map. Hermes needs the dashboard's address and the token.
+
+### 5a. Get to the Hermes CLI
+
+In Docker Manager, on the **`hermes-agent-eblr`** project, you'll see two links:
+
+- **"Open"** → Hermes's web chat. It asks for a login. If your Nous account is Google-only and this
+  blocks you, **skip it — you don't need it.**
+- **"Terminal"** → a command line **inside the Hermes container**. This is the one you want.
+
+Click **Terminal**, and at the prompt type:
+
+```bash
+hermes
+```
+
+That launches the Hermes CLI chat. (If `hermes` says "command not found", you're in the *host*
+terminal by mistake — make sure you clicked Terminal on the `hermes-agent-eblr` project specifically.)
+
+### 5b. Give Hermes the address + token
+
+The dashboard's address *from Hermes's point of view* is your server IP and port:
 
 ```
 http://YOUR_VPS_IP:3000
 ```
 
-Your VPS IP is in the SSH login banner ("IPv4 address for eth0"), or run `hostname -I`.
+> Why not `localhost`? Because Hermes is in its own container — to Hermes, "localhost" means *itself*,
+> not the dashboard. The server IP always works.
 
-**B. Production (HTTPS, by domain) — recommended.** You already have **traefik** running on this VPS
-(it's in your Docker Manager projects), so route a subdomain to the dashboard:
+Then:
 
-1. DNS (hPanel → Domains → DNS): add an **A record** `signals.yourdomain.com → YOUR_VPS_IP`.
-2. Put the dashboard on traefik's network and add routing labels. Create
-   `docker-compose.override.yml` next to the compose file:
+1. On the dashboard, go to **Settings**, paste your `INGEST_TOKEN` into the token box, and click
+   **⧉ Copy prompt**. That copies a ready-made instruction block (with your token already in it).
+2. Paste that whole block into the Hermes CLI and send it.
+3. Hermes will research and post signals — each one pops onto your map within a second.
+
+### 5c. Quick sanity check (optional)
+
+Before the full run, you can confirm Hermes can reach the dashboard. In the Hermes Terminal:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "Authorization: Bearer YOUR_INGEST_TOKEN" \
+  http://YOUR_VPS_IP:3000/api/ingest/check
+```
+
+`200` = connected and the token is right. `401` = token doesn't match your `.env`.
+
+---
+
+## Optional — use your own domain with HTTPS
+
+**Skip this entire section if you don't own a domain. The IP address works perfectly fine.**
+
+If you *do* own a domain and want a clean `https://signals.example.com` instead of an IP:
+
+1. In your DNS settings, add an **A record** pointing your chosen subdomain at `YOUR_VPS_IP`.
+2. You already have **traefik** running (it's in Docker Manager) — it can hand out HTTPS certificates.
+   Create a file `docker-compose.override.yml` next to the compose file:
    ```yaml
    services:
      signal-engine:
        networks: [traefik]
        labels:
          - traefik.enable=true
-         - traefik.http.routers.signal.rule=Host(`signals.yourdomain.com`)
+         - traefik.http.routers.signal.rule=Host(`signals.example.com`)   # your real subdomain
          - traefik.http.routers.signal.entrypoints=websecure
          - traefik.http.routers.signal.tls.certresolver=le
          - traefik.http.services.signal.loadbalancer.server.port=3000
@@ -132,120 +170,53 @@ Your VPS IP is in the SSH login banner ("IPv4 address for eth0"), or run `hostna
      traefik:
        external: true
    ```
-   Then `docker compose up -d`. (Confirm the network name and certresolver match your traefik —
-   `docker network ls` and your traefik static config. Names like `traefik`/`web`/`le` vary by setup.)
-3. Visit `https://signals.yourdomain.com`. HTTPS also makes the session cookie `Secure` automatically.
+   Replace `signals.example.com` with your subdomain. Then `docker compose up -d`.
+3. Confirm the network name (`traefik`) and cert-resolver (`le`) match your traefik setup — check with
+   `docker network ls`; these names vary. Then visit `https://signals.example.com`.
 
-## Step 5 — connect Hermes (already running on this VPS)
+## Common questions & fixes
 
-Hermes (`hermes-agent-eblr` in your Docker Manager) only needs two things: the dashboard **URL** and
-the **INGEST_TOKEN**.
-
-**Important networking note:** Hermes runs in its *own* container, so `http://localhost:3000` from
-inside Hermes points at Hermes, **not** the dashboard. Use one of these reachable URLs instead:
-
-- **Domain (cleanest):** `https://signals.yourdomain.com` — works from anywhere once Step 4B is done.
-- **Same-host by IP:** `http://YOUR_VPS_IP:3000` — works because the port is published on the host
-  (needs the firewall open as in Step 4A).
-
-Then:
-
-1. Open the dashboard → **Settings** → paste your `INGEST_TOKEN` into the token field → **⧉ Copy prompt**.
-2. In Hermes, set its task / `DASHBOARD_URL` to the URL above and paste the prompt.
-3. Tell Hermes: *"Scan today's AI landscape and build me a creator map."*
-
-**Smoke test the exact path Hermes will use** — open a Terminal *into the Hermes container*
-(Docker Manager → hermes-agent-eblr → Terminal) and run:
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -H "Authorization: Bearer YOUR_INGEST_TOKEN" \
-  http://YOUR_VPS_IP:3000/api/ingest/check        # 200 = good, 401 = wrong token
-```
-
-If that returns `200`, Hermes can post. A node should appear on the open dashboard within a second
-of its first `POST /api/events`.
+- **"I don't have a domain."** You don't need one. Use `http://YOUR_VPS_IP:3000` everywhere.
+- **`hermes: command not found`** → you're in the host SSH terminal. Hermes only exists inside its
+  container: Docker Manager → `hermes-agent-eblr` → **Terminal** → `hermes`.
+- **`npm: command not found`** → expected and fine. The server doesn't use npm; Docker builds the app.
+- **`No such file` running `./launch-browser.sh` etc.** → you're not inside `/opt/AI-signal-engine`.
+  `cd /opt/AI-signal-engine` first.
+- **The Hermes "Open" web UI won't let me log in** → skip it; use the container **Terminal** + `hermes`.
+- **`401` when Hermes posts** → the token in the prompt doesn't match `INGEST_TOKEN` in `.env`. Fix
+  `.env`, then `docker compose up -d` to reload it.
+- **Map loads but Hermes can't reach it** → Hermes is using `localhost`. Switch it to
+  `http://YOUR_VPS_IP:3000`.
+- **Page won't load from my browser** → the firewall isn't allowing TCP 3000 yet (hPanel → VPS →
+  Security → Firewall).
 
 ## Environment variables
 
-| Variable | Required | Notes |
+| Variable | Required | What it does |
 | --- | --- | --- |
-| `APP_PASSWORD` | recommended | Gates every page. Blank = open mode (no login). Set it before exposing publicly. |
-| `INGEST_TOKEN` | **yes** | Bearer token Hermes sends on `/api/events`. |
-| `DATA_FILE` | no | Defaults to `./data/signal.json` (volume-backed in Docker). |
-| `NEXT_PUBLIC_APP_NAME` | no | Display name, default "AI Signal Engine". |
-| `DEMO_MODE` | no | `true` (default) shows the demo-scan button; `false` hides it. |
-| `OPENAI_API_KEY` etc. | no | Optional, for future LLM-enriched briefs. Not needed. |
-
-## Demo mode
-
-Click **▶ Demo Scan** on the dashboard (unless `DEMO_MODE=false`). Realistic seeded events stream in
-with logs, glowing nodes, and relationship threads — the identical animation path to live ingest, so
-it's safe footage even if the live agent is offline. Hit **✕ Clear** first for a clean take.
+| `APP_PASSWORD` | recommended | Dashboard login. Blank = no login (open mode). |
+| `INGEST_TOKEN` | **yes** | The secret Hermes sends to prove it's allowed to post. |
+| `DATA_FILE` | no | Where data is stored. Default `./data/signal.json` (kept across restarts). |
+| `NEXT_PUBLIC_APP_NAME` | no | Display name in the UI. |
+| `DEMO_MODE` | no | `true` (default) shows the Demo Scan button. |
 
 ## Updating & resetting
 
 ```bash
-# pull the latest code and rebuild
-cd /opt/AI-signal-engine && git pull && docker compose up -d --build
+cd /opt/AI-signal-engine
 
-# clear the board (events + bundles) without touching the container
+# get the latest version and restart
+git pull && docker compose up -d --build
+
+# clear the board (events + bundles) but keep running
 curl -X DELETE http://localhost:3000/api/events -H "Authorization: Bearer YOUR_INGEST_TOKEN"
 
-# full wipe (events, briefs, sources, settings)
+# wipe everything and start fresh
 docker compose down && rm -rf ./data && docker compose up -d --build
-
-# rotate secrets: edit .env, then recreate the container
-nano .env && docker compose up -d
 ```
 
-## Local development (your laptop — NOT the VPS)
+## Running it on your own computer instead (no server)
 
-On the VPS, use Docker (above). On your own machine for development you can run it directly with Node:
-
-```bash
-npm install
-cp .env.example .env     # optional; blank APP_PASSWORD = open mode
-npm run dev              # http://localhost:3000
-```
-
-Or just double-click `start.bat` (Windows) / run `./start.sh` (macOS/Linux) — they install, build,
-and launch for you.
-
-## Optional — local browser (CDP) for Hermes
-
-Lets Hermes browse without Brave/Exa/Browser Use/Browserbase keys. On the VPS:
-
-```bash
-cd /opt/AI-signal-engine
-chmod +x install-browser-linux.sh launch-browser.sh scripts/launch-cdp-browser.sh
-./install-browser-linux.sh   # installs Chromium if none present
-./launch-browser.sh          # opens a headless CDP browser on 127.0.0.1:9222
-```
-
-Then, in the **Hermes CLI** (not the web/desktop chat — `/browser connect` is CLI-only):
-
-```text
-/browser connect
-/browser status
-```
-
-Reality check for a Dockerized Hermes: the CDP browser must be reachable from *inside* the Hermes
-container — same Docker network, or pass an explicit `ws://…:9222` URL to `/browser connect`. If
-that's fiddly, skip it: the task prompt automatically falls back to fetching the source list
-directly, which posts real signals just fine. See [docs/BROWSER_CDP.md](docs/BROWSER_CDP.md).
-
-## Troubleshooting
-
-- **`No such file` / `command not found` for repo scripts** → you haven't cloned yet, or you're not
-  inside the project folder. Do Step 1, then `cd /opt/AI-signal-engine`.
-- **`npm: command not found`** → expected on the VPS. Use Docker (Step 3); npm is only for local dev.
-- **`docker build` says "Dockerfile not found"** → you're not in the project folder. `cd /opt/AI-signal-engine`.
-- **401 from `/api/events` or `/api/ingest/check`** → token mismatch. The `Authorization: Bearer …`
-  value must equal `INGEST_TOKEN` in `.env`. After editing `.env`, run `docker compose up -d` to reload it.
-- **Hermes can't reach the dashboard** → it's using `localhost`. Switch it to `http://YOUR_VPS_IP:3000`
-  or the HTTPS domain (Step 5).
-- **Login loop** → `APP_PASSWORD` changed after you logged in; clear the `ase_session` cookie.
-- **No live updates behind a proxy** → ensure SSE isn't buffered (`proxy_buffering off;` for `/api/stream`
-  on nginx; traefik passes it through by default).
-- **Data missing after redeploy** → keep the `./data` volume mapping intact (don't `rm -rf ./data`).
+For local testing on Windows/Mac/Linux, you don't need any of the above — just double-click
+**`start.bat`** (Windows) or run **`./start.sh`** (Mac/Linux). They install, build, and open the map
+for you at `http://localhost:3000`.
