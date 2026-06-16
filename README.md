@@ -203,16 +203,3 @@ destructive actions, no automatic publishing, and verification before any claim 
 - The source scanner prefers RSS/changelogs, sends a descriptive User-Agent, fetches each source
   once per manual scan, and caps items per feed.
 - Run behind HTTPS in production (see DEPLOYMENT.md).
-
-## Roadmap
-
-- LLM-enriched briefs (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` /
-  `OPENROUTER_API_KEY` are already plumbed as optional env vars)
-- Scheduled source scans + Hermes enrichment loop for draft events
-- Multi-board support (one board per video)
-- Timeline scrubber to replay how a story developed
-- Notion/Obsidian export targets alongside markdown
-
-## License
-
-Private project — all rights reserved by the owner.
