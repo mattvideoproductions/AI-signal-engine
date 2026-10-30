@@ -1,5 +1,7 @@
 # AI Signal Engine
 
+> **A MattVidPro project.** Built for the [MattVidPro YouTube channel](https://www.youtube.com/@MattVidPro), where Matt covers AI news and tools.
+
 **A private, agent-powered signal intelligence map.**
 
 AI Signal Engine is a self-hosted dashboard for anyone tracking a fast-moving landscape — built
